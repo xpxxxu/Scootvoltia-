@@ -207,13 +207,6 @@
                     </div>
                     
                     <p id="detail-description" class="text-gray-600 text-lg"></p>
-
-                    <!-- Listen to Description Button -->
-                    <button id="listen-description-button" onclick="listenToDescription()" class="flex items-center text-sm brand-bg text-white py-2 px-3 rounded-full hover:bg-yellow-600 transition-colors">
-                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.121-7.072a8 8 0 010 11.314m-7.072-11.314a2 2 0 110 2.828 2 2 0 010-2.828zM15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                        <span id="listen-description-text">Listen to Description (TTS)</span>
-                    </button>
-
                     <div class="flex justify-between items-center border-t pt-4">
                         <span id="detail-price" class="text-4xl font-extrabold brand-color">$0.00</span>
                         <button id="detail-add-to-cart" onclick="" class="brand-bg text-white py-3 px-6 rounded-full font-semibold hover:bg-yellow-600 transition-colors shadow-md">
@@ -274,12 +267,12 @@
             <img id="fs-main-img" src="" alt="Full Screen Product Image" class="max-w-full max-h-full object-contain">
             
             <!-- Previous Button -->
-            <button onclick="prevImage(true)" class="absolute left-0 top-1/2 -translate-y-1/2 bg-transparent text-white p-5 hover:bg-black hover:bg-opacity-50 transition-all z-40">
+            <button onclick="prevImage()" class="absolute left-0 top-1/2 -translate-y-1/2 bg-transparent text-white p-5 hover:bg-black hover:bg-opacity-50 transition-all z-40">
                 <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
             </button>
 
             <!-- Next Button -->
-            <button onclick="nextImage(true)" class="absolute right-0 top-1/2 -translate-y-1/2 bg-transparent text-white p-5 hover:bg-black hover:bg-opacity-50 transition-all z-40">
+            <button onclick="nextImage()" class="absolute right-0 top-1/2 -translate-y-1/2 bg-transparent text-white p-5 hover:bg-black hover:bg-opacity-50 transition-all z-40">
                 <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
             </button>
         </div>
@@ -312,4 +305,1000 @@
                 <div id="expert-response" class="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 min-h-[100px] max-h-96 overflow-y-auto">
                     <p class="text-gray-500 italic">Ask your question above to get real-time, grounded battery recommendations.</p>
                 </div>
-                <di
+                <div id="expert-loading" class="hidden text-center text-scootvoltia-blue font-semibold">
+                    <svg class="animate-spin h-5 w-5 mr-3 inline-block brand-color" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Processing...
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Firebase, Gemini API, and Application Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, setLogLevel, addDoc, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Global Firebase & App Variables ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-battery-store';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app, db, auth;
+        let userId = 'anonymous'; 
+        let isAuthReady = false;
+        let currentProductId = null; 
+        let reviewSnapshotUnsubscribe = null; 
+        let allReviewsUnsubscribe = null; // New unsubscribe for all reviews listener
+        let currentImageIndex = 0; 
+        
+        // Local state for the shopping cart and filtering
+        let cart = {}; 
+        let productRatingMap = {}; // { productId: { average: 4.5, count: 2 } }
+        let currentFilter = 'all';
+        let currentSort = 'price-asc'; 
+        
+        // --- New LLM/TTS Constants ---
+        const GEMINI_API_KEY = ""; 
+        const GEMINI_URL_FLASH = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+        const GEMINI_URL_TTS = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${GEMINI_API_KEY}`;
+
+        // Mock product data with images and initial reviews
+        const products = [
+            { 
+                id: 1, 
+                name: "AA Alkaline (20-Pack)", 
+                description: "Long-lasting, reliable power for everyday devices like remote controls and toys. Provides consistent voltage over its lifespan.", 
+                price: 15.99, 
+                category: "Standard",
+                images: [
+                    "https://placehold.co/800x800/1e40bf/ffffff?text=AA+Alkaline+Front", 
+                    "https://placehold.co/800x800/3b82f6/ffffff?text=AA+Package+View", 
+                    "https://placehold.co/800x800/93c5fd/ffffff?text=AA+Specifications"
+                ]
+            },
+            { 
+                id: 2, 
+                name: "Lithium-ion 18650 (Single)", 
+                description: "High-capacity rechargeable cell for flashlights, vaping devices, and other high-drain electronics. Requires a specialized charger.", 
+                price: 7.50, 
+                category: "Rechargeable",
+                images: [
+                    "https://placehold.co/800x800/dc2626/ffffff?text=18650+Li-ion+Cell", 
+                    "https://placehold.co/800x800/ef4444/ffffff?text=18650+Safety+Label", 
+                    "https://placehold.co/800x800/fca5a5/ffffff?text=18650+Charger"
+                ]
+            },
+            { 
+                id: 3, 
+                name: "AAA Rechargeable NiMH (4-Pack)", 
+                description: "Eco-friendly, perfect for remote controls and low-drain devices. Can be recharged hundreds of times.", 
+                price: 12.99, 
+                category: "Standard",
+                images: [
+                    "https://placehold.co/800x800/15803d/ffffff?text=AAA+NiMH+Pack", 
+                    "https://placehold.co/800x800/4ade80/ffffff?text=AAA+Cells+Layed", 
+                ]
+            },
+            { 
+                id: 4, 
+                name: "9V Heavy Duty", 
+                description: "Essential for smoke detectors, professional audio equipment, and toys. Provides moderate power output.", 
+                price: 5.49, 
+                category: "Standard",
+                images: [
+                    "https://placehold.co/800x800/5b21b6/ffffff?text=9V+Heavy+Duty", 
+                    "https://placehold.co/800x800/7c3aed/ffffff?text=9V+Terminal+View"
+                ]
+            },
+            { 
+                id: 5, 
+                name: "CR2032 Lithium Coin (6-Pack)", 
+                description: "Reliable power for watches, remotes, and key fobs. Small, long shelf life, and high energy density.", 
+                price: 9.99, 
+                category: "Specialty",
+                images: [
+                    "https://placehold.co/800x800/0891b2/ffffff?text=CR2032+Coin+Cell", 
+                    "https://placehold.co/800x800/22d3ee/ffffff?text=CR2032+Package"
+                ]
+            },
+            { 
+                id: 6, 
+                name: "PowerBank 20000mAh", 
+                description: "Portable high-speed charger for multiple device recharges. Features fast charging ports for phones and tablets.", 
+                price: 45.00, 
+                category: "Accessory",
+                images: [
+                    "https://placehold.co/800x800/374151/ffffff?text=PowerBank+Front", 
+                    "https://placehold.co/800x800/4b5563/ffffff?text=PowerBank+Ports",
+                    "https://placehold.co/800x800/6b7280/ffffff?text=PowerBank+Charging"
+                ]
+            }
+        ];
+
+        // Map for quick product lookup
+        const productMap = products.reduce((map, product) => {
+            map[product.id] = product;
+            return map;
+        }, {});
+        
+        // Get unique categories for the filter dropdown
+        const categories = [...new Set(products.map(p => p.category))];
+
+
+        // --- Exposed Global Functions ---
+        window.addToCart = addToCart;
+        window.updateQuantity = updateQuantity;
+        window.checkout = checkout;
+        window.toggleCart = toggleCart;
+        window.hideStatusModal = hideStatusModal;
+        window.showExpertModal = showExpertModal;
+        window.hideExpertModal = hideExpertModal;
+        window.getExpertAdvice = getExpertAdvice;
+        window.listenToDescription = listenToDescription;
+        window.showProductDetails = showProductDetails;
+        window.onThumbnailClick = onThumbnailClick;
+        window.hideProductDetails = hideProductDetails;
+        window.submitReview = submitReview;
+        window.nextImage = nextImage;
+        window.prevImage = prevImage;
+        window.openFullscreenCarousel = openFullscreenCarousel;
+        window.closeFullscreenCarousel = closeFullscreenCarousel;
+        window.applyFilterAndSort = applyFilterAndSort; // New exposed function
+
+
+        // --- TTS Helper Functions (needed for TTS to work) ---
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+        function pcmToWav(pcm16, sampleRate = 24000) {
+            const numChannels = 1;
+            const bytesPerSample = 2; 
+            const buffer = new ArrayBuffer(44 + pcm16.length * bytesPerSample);
+            const view = new DataView(buffer);
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + pcm16.length * bytesPerSample, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true); 
+            view.setUint16(20, 1, true);  
+            view.setUint16(22, numChannels, true); 
+            view.setUint32(24, sampleRate, true); 
+            view.setUint32(28, sampleRate * numChannels * bytesPerSample, true); 
+            view.setUint16(32, numChannels * bytesPerSample, true); 
+            view.setUint16(34, 16, true); 
+            writeString(view, 36, 'data');
+            view.setUint32(40, pcm16.length * bytesPerSample, true); 
+            let offset = 44;
+            for (let i = 0; i < pcm16.length; i++, offset += 2) {
+                view.setInt16(offset, pcm16[i], true);
+            }
+            return new Blob([view], { type: 'audio/wav' });
+        }
+        
+        // --- Centralized Fetch with Exponential Backoff (needed for Gemini API calls) ---
+        async function fetchWithRetry(url, payload, maxRetries = 5) {
+            let delay = 1000;
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) {
+                        return await response.json();
+                    } else if (response.status === 429 || response.status >= 500) {
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 2; 
+                    } else {
+                        const errorBody = await response.text();
+                        throw new Error(`API failed with status ${response.status}: ${errorBody}`);
+                    }
+                } catch (error) {
+                    if (i === maxRetries - 1) throw error;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
+                }
+            }
+            throw new Error("Maximum retries reached for API call.");
+        }
+
+
+        // --- LLM (Expert Advice) Function (Gemini Text/Grounding) ---
+        async function getExpertAdvice() {
+            const queryInput = document.getElementById('expert-query');
+            const query = queryInput.value.trim();
+            const submitButton = document.getElementById('expert-submit-button');
+            const responseDiv = document.getElementById('expert-response');
+            const loadingDiv = document.getElementById('expert-loading');
+
+            if (!query) {
+                responseDiv.innerHTML = '<p class="text-red-500">Please enter your battery question.</p>';
+                return;
+            }
+
+            submitButton.disabled = true;
+            loadingDiv.classList.remove('hidden');
+            responseDiv.innerHTML = '';
+            
+            const systemPrompt = "You are the ScootVoltia Battery Expert. Your role is to provide concise, helpful, and safe advice regarding battery types, uses, and compatibility. Use the provided search results to ground your recommendations in current information. Format your response clearly using bullet points or simple paragraphs, and suggest suitable battery types for the user's need.";
+
+            const payload = {
+                contents: [{ parts: [{ text: query }] }],
+                tools: [{ "google_search": {} }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+
+            try {
+                const result = await fetchWithRetry(GEMINI_URL_FLASH, payload);
+                const candidate = result.candidates?.[0];
+
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    let htmlContent = candidate.content.parts[0].text.replace(/\n/g, '<br>');
+
+                    let sourcesHtml = '';
+                    const groundingMetadata = candidate.groundingMetadata;
+                    if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                        const sources = groundingMetadata.groundingAttributions
+                            .map(attribution => ({
+                                uri: attribution.web?.uri,
+                                title: attribution.web?.title,
+                            }))
+                            .filter(source => source.uri && source.title);
+                        
+                        if (sources.length > 0) {
+                            sourcesHtml = '<div class="mt-4 pt-2 border-t border-gray-200 text-xs text-gray-500">';
+                            sourcesHtml += '<strong>Sources:</strong><ul>';
+                            sources.forEach(s => {
+                                sourcesHtml += `<li><a href="${s.uri}" target="_blank" class="text-scootvoltia-blue hover:underline">${s.title}</a></li>`;
+                            });
+                            sourcesHtml += '</ul></div>';
+                        }
+                    }
+                    responseDiv.innerHTML = `<p class="font-semibold text-scootvoltia-blue">Expert Answer:</p><p>${htmlContent}</p>${sourcesHtml}`;
+
+                } else {
+                    responseDiv.innerHTML = '<p class="text-red-500">Sorry, I couldn\'t find advice for that query.</p>';
+                }
+            } catch (error) {
+                console.error("Gemini API call failed:", error);
+                responseDiv.innerHTML = '<p class="text-red-500">An error occurred while connecting to the Battery Expert service. Please try again.</p>';
+            } finally {
+                submitButton.disabled = false;
+                loadingDiv.classList.add('hidden');
+            }
+        }
+
+        // --- TTS (Listen to Description) Function (Gemini TTS) ---
+        async function listenToDescription(productId) {
+            const product = productMap[productId];
+            if (!product) return;
+            
+            const buttonId = `tts-button-${productId}`;
+            const ttsButton = document.getElementById(buttonId);
+            if (ttsButton.disabled) return;
+
+            const originalText = ttsButton.innerHTML;
+            ttsButton.disabled = true;
+            ttsButton.innerHTML = '<svg class="animate-spin h-4 w-4 mr-1 inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating Audio...';
+            
+            const textToSpeak = `${product.name}. Price: $${product.price.toFixed(2)}. Description: ${product.description}`;
+            
+            const payload = {
+                contents: [{ 
+                    parts: [{ text: `Say clearly and professionally: ${textToSpeak}` }] 
+                }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: { voiceName: "Charon" }
+                        }
+                    }
+                },
+            };
+
+            try {
+                const result = await fetchWithRetry(GEMINI_URL_TTS, payload);
+                const part = result?.candidates?.[0]?.content?.parts?.[0];
+                const audioData = part?.inlineData?.data;
+                const mimeType = part?.inlineData?.mimeType;
+
+                if (audioData && mimeType && mimeType.startsWith("audio/L16")) {
+                    const rateMatch = mimeType.match(/rate=(\d+)/);
+                    const sampleRate = rateMatch ? parseInt(rateMatch[1], 10) : 24000;
+                    
+                    const pcmData = base64ToArrayBuffer(audioData);
+                    const pcm16 = new Int16Array(pcmData);
+                    const wavBlob = pcmToWav(pcm16, sampleRate);
+                    const audioUrl = URL.createObjectURL(wavBlob);
+                    
+                    const audio = new Audio(audioUrl);
+                    
+                    ttsButton.innerHTML = '<svg class="w-4 h-4 mr-1 inline" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg> Playing...';
+
+                    audio.play();
+                    
+                    audio.onended = () => {
+                        ttsButton.disabled = false;
+                        ttsButton.innerHTML = originalText;
+                        URL.revokeObjectURL(audioUrl); 
+                    };
+
+                } else {
+                    showStatusModal("TTS Error", "Could not generate audio data.");
+                    ttsButton.disabled = false;
+                    ttsButton.innerHTML = originalText;
+                }
+
+            } catch (error) {
+                console.error("TTS API call failed:", error);
+                showStatusModal("TTS Error", "Failed to connect to the audio service.");
+                ttsButton.disabled = false;
+                ttsButton.innerHTML = originalText;
+            }
+        }
+
+
+        // --- Firebase Initialization and Authentication ---
+
+        async function initializeFirebase() {
+            try {
+                if (Object.keys(firebaseConfig).length === 0) {
+                    console.error("Firebase config is empty. Cannot initialize Firestore in read/write mode.");
+                    return;
+                }
+
+                setLogLevel('error');
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        isAuthReady = true;
+                        setupCartListener();
+                        setupAllReviewsListener(); // NEW: Start listening to all reviews
+                        if (currentProductId !== null) {
+                            subscribeToProductReviews(currentProductId, renderReviews);
+                        }
+                    } else {
+                        userId = crypto.randomUUID(); 
+                        isAuthReady = true;
+                        setupCartListener();
+                        setupAllReviewsListener(); // NEW: Start listening to all reviews
+                    }
+                });
+
+            } catch (error) {
+                console.error("Error initializing Firebase or signing in:", error);
+                showStatusModal("Error", "Failed to connect to the store database.");
+            }
+        }
+
+        // --- Firestore Constants ---
+
+        const CART_COLLECTION_NAME = 'battery_store_carts';
+        const CART_DOCUMENT_ID = 'cart';
+        const REVIEWS_COLLECTION_NAME = 'product_reviews';
+
+        function getCartDocumentRef() {
+            if (!db || !userId) return null;
+            // Private data storage path: /artifacts/{appId}/users/{userId}/battery_store_carts
+            const userColRef = collection(db, `/artifacts/${appId}/users/${userId}/${CART_COLLECTION_NAME}`);
+            return doc(userColRef, CART_DOCUMENT_ID);
+        }
+        
+        function getProductReviewsCollectionRef() {
+            if (!db) return null;
+            // Public data storage path: /artifacts/{appId}/public/data/product_reviews
+            return collection(db, `/artifacts/${appId}/public/data/${REVIEWS_COLLECTION_NAME}`);
+        }
+        
+        // --- NEW: Global Review Listener and Calculation ---
+
+        function calculateRatings(reviews) {
+            const ratings = {};
+            const counts = {};
+
+            reviews.forEach(review => {
+                const id = review.productId;
+                if (!id) return; // Skip reviews without a productId
+
+                ratings[id] = (ratings[id] || 0) + review.rating;
+                counts[id] = (counts[id] || 0) + 1;
+            });
+
+            productRatingMap = {};
+            for (const id in ratings) {
+                productRatingMap[id] = {
+                    average: parseFloat((ratings[id] / counts[id]).toFixed(1)),
+                    count: counts[id]
+                };
+            }
+            
+            // Re-render the products list to show the updated ratings and trigger sorting
+            renderProducts(); 
+        }
+
+        function setupAllReviewsListener() {
+            if (allReviewsUnsubscribe) allReviewsUnsubscribe();
+            if (!db) return;
+
+            const reviewsRef = getProductReviewsCollectionRef();
+            allReviewsUnsubscribe = onSnapshot(reviewsRef, (snapshot) => {
+                const reviews = [];
+                snapshot.forEach(doc => {
+                    reviews.push({ id: doc.id, ...doc.data() });
+                });
+                calculateRatings(reviews);
+            }, (error) => {
+                console.error("Firestore all reviews listener error:", error);
+            });
+        }
+
+
+        // --- Firestore Cart Operations ---
+
+        function setupCartListener() {
+            if (!isAuthReady || !db) return;
+
+            const docRef = getCartDocumentRef();
+            if (!docRef) return;
+            
+            onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    cart = data.items || {};
+                } else {
+                    saveCartToFirestore({}); 
+                }
+                renderCart();
+            }, (error) => {
+                console.error("Firestore cart listener error:", error);
+            });
+        }
+
+        async function saveCartToFirestore(newCart) {
+            if (!isAuthReady) {
+                console.error("Cannot save cart: Firebase not ready.");
+                return;
+            }
+
+            const docRef = getCartDocumentRef();
+            if (!docRef) return;
+
+            cart = newCart; 
+            renderCart(); 
+
+            try {
+                await setDoc(docRef, { items: newCart, userId: userId, lastUpdated: Date.now() });
+            } catch (e) {
+                console.error("Error saving cart to Firestore:", e);
+                showStatusModal("Save Error", "Could not save your cart state to the database.");
+            }
+        }
+
+        // --- Product Detail & Review Logic (renamed to avoid confusion with the new global listener) ---
+
+        function subscribeToProductReviews(productId, callback) {
+            if (reviewSnapshotUnsubscribe) {
+                reviewSnapshotUnsubscribe(); 
+                reviewSnapshotUnsubscribe = null;
+            }
+            if (!db || !isAuthReady) return;
+
+            const reviewsRef = getProductReviewsCollectionRef();
+            const q = query(reviewsRef, where("productId", "==", productId));
+
+            reviewSnapshotUnsubscribe = onSnapshot(q, (snapshot) => {
+                const reviews = [];
+                snapshot.forEach(doc => {
+                    reviews.push({ id: doc.id, ...doc.data() });
+                });
+                reviews.sort((a, b) => b.timestamp - a.timestamp);
+                callback(reviews);
+            }, (error) => {
+                console.error("Error fetching reviews:", error);
+                document.getElementById('review-list').innerHTML = '<p class="text-red-500 text-center py-4">Failed to load reviews.</p>';
+            });
+        }
+
+        function renderStars(rating, sizeClass = 'text-xl') {
+            let html = '';
+            // Use the gold color for filled stars
+            const filledStar = `<span class="text-scootvoltia-yellow ${sizeClass}">&#9733;</span>`;
+            // Use the gray color for empty stars
+            const emptyStar = `<span class="text-gray-300 ${sizeClass}">&#9733;</span>`;
+            
+            const roundedRating = Math.round(rating);
+
+            for (let i = 1; i <= 5; i++) {
+                html += (i <= roundedRating) ? filledStar : emptyStar;
+            }
+            return html;
+        }
+
+        function renderReviews(reviews) {
+            const container = document.getElementById('review-list');
+            document.getElementById('review-count').textContent = reviews.length;
+            
+            // NEW: Update detail modal rating section on snapshot change
+            const currentProductRating = productRatingMap[currentProductId] || { average: 0, count: 0 };
+            const ratingHtml = `
+                ${renderStars(currentProductRating.average, 'text-2xl')}
+                <span class="text-3xl font-bold text-scootvoltia-blue">${currentProductRating.average.toFixed(1)}</span>
+                <span class="text-gray-500">(${currentProductRating.count} reviews)</span>
+            `;
+            document.getElementById('detail-average-rating').innerHTML = ratingHtml;
+
+
+            if (reviews.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 italic text-center py-4">Be the first to leave a review!</p>';
+                return;
+            }
+
+            container.innerHTML = reviews.map(review => {
+                const date = review.timestamp ? new Date(review.timestamp).toLocaleDateString() : 'N/A';
+                const displayUserId = review.userId.substring(0, 8) + '...';
+
+                return `
+                    <div class="border-b pb-3 mb-3">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center">
+                                <p class="font-semibold text-scootvoltia-blue">User ${displayUserId}</p>
+                                <div class="ml-3">${renderStars(review.rating, 'text-lg')}</div>
+                            </div>
+                            <span class="text-xs text-gray-400">${date}</span>
+                        </div>
+                        <p class="mt-1 text-gray-700">${review.text}</p>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        async function submitReview() {
+            if (!isAuthReady || !db) {
+                showStatusModal("Authentication Required", "Please wait for authentication to complete before submitting a review.");
+                return;
+            }
+            if (currentProductId === null) return;
+            
+            const ratingEl = document.querySelector('#product-detail-modal input[name="rating"]:checked');
+            const reviewTextEl = document.getElementById('review-text');
+            
+            const rating = ratingEl ? parseInt(ratingEl.value) : null;
+            const text = reviewTextEl.value.trim();
+
+            if (!rating || text.length < 5) {
+                showStatusModal("Invalid Review", "Please provide a rating (1-5 stars) and a review of at least 5 characters.");
+                return;
+            }
+
+            const newReview = {
+                productId: currentProductId,
+                userId: userId, 
+                rating: rating,
+                text: text,
+                timestamp: Date.now()
+            };
+
+            try {
+                const reviewsRef = getProductReviewsCollectionRef();
+                await addDoc(reviewsRef, newReview);
+                
+                reviewTextEl.value = '';
+                if (ratingEl) ratingEl.checked = false;
+
+                showStatusModal("Success", "Your review has been successfully submitted!");
+            } catch (e) {
+                console.error("Error adding review:", e);
+                showStatusModal("Submission Failed", "Could not submit review to the database.");
+            }
+        }
+        
+        // --- Image Carousel Logic ---
+
+        function updateFullscreenViewer(imageUrl) {
+            const product = productMap[currentProductId];
+            if (!product) return;
+            
+            const imageToUse = imageUrl || product.images[currentImageIndex];
+
+            const fsImageEl = document.getElementById('fs-main-img');
+            const fsCounterEl = document.getElementById('fs-counter');
+
+            fsImageEl.src = imageToUse;
+            fsCounterEl.textContent = `${currentImageIndex + 1} / ${product.images.length}`;
+        }
+        
+        function updateMainImageDisplay() {
+            const product = productMap[currentProductId];
+            if (!product || product.images.length === 0) return;
+
+            const imageUrl = product.images[currentImageIndex];
+
+            const mainImageEl = document.getElementById('detail-main-img');
+            mainImageEl.src = imageUrl;
+
+            updateFullscreenViewer(imageUrl);
+
+            const galleryEl = document.getElementById('detail-image-gallery');
+            Array.from(galleryEl.children).forEach((img, index) => {
+                img.classList.remove('border-scootvoltia-yellow');
+                img.classList.remove('border-gray-500');
+                img.classList.add('border-transparent');
+
+                if (index === currentImageIndex) {
+                    img.classList.remove('border-transparent');
+                    img.classList.add('border-scootvoltia-yellow');
+                }
+            });
+        }
+
+        function nextImage() {
+            const product = productMap[currentProductId];
+            if (!product || product.images.length <= 1) return;
+
+            currentImageIndex = (currentImageIndex + 1) % product.images.length;
+            updateMainImageDisplay();
+        }
+
+        function prevImage() {
+            const product = productMap[currentProductId];
+            if (!product || product.images.length <= 1) return;
+
+            currentImageIndex = (currentImageIndex - 1 + product.images.length) % product.images.length;
+            updateMainImageDisplay();
+        }
+
+        function onThumbnailClick(imageIndex) {
+            currentImageIndex = imageIndex;
+            updateMainImageDisplay();
+        }
+
+        function openFullscreenCarousel() {
+            const product = productMap[currentProductId];
+            if (!product || product.images.length === 0) return;
+            
+            updateFullscreenViewer();
+            
+            document.getElementById('fullscreen-image-viewer').classList.remove('hidden');
+            document.getElementById('fullscreen-image-viewer').classList.add('flex');
+        }
+
+        function closeFullscreenCarousel() {
+            document.getElementById('fullscreen-image-viewer').classList.add('hidden');
+            document.getElementById('fullscreen-image-viewer').classList.remove('flex');
+        }
+
+
+        function showProductDetails(productId) {
+            const product = productMap[productId];
+            if (!product) return;
+            
+            currentProductId = productId;
+            currentImageIndex = 0; 
+            
+            // 1. Populate details
+            document.getElementById('detail-name').textContent = product.name;
+            document.getElementById('detail-description').textContent = product.description;
+            document.getElementById('detail-price').textContent = `$${product.price.toFixed(2)}`;
+            document.getElementById('detail-category').textContent = product.category;
+            
+            // 2. Set 'Add to Cart' button action
+            document.getElementById('detail-add-to-cart').onclick = () => {
+                addToCart(product.id);
+                hideProductDetails();
+            };
+
+            // 3. Populate images gallery and set initial image
+            const mainImageEl = document.getElementById('detail-main-img'); 
+            const galleryEl = document.getElementById('detail-image-gallery');
+            galleryEl.innerHTML = '';
+            
+            if (product.images.length > 0) {
+                product.images.forEach((imgUrl, index) => {
+                    const img = document.createElement('img');
+                    img.src = imgUrl;
+                    img.className = 'w-16 h-16 rounded-lg object-cover cursor-pointer border-2 border-transparent hover:border-scootvoltia-yellow transition-colors';
+                    img.onclick = (e) => { e.stopPropagation(); onThumbnailClick(index); }; 
+                    galleryEl.appendChild(img);
+                });
+                updateMainImageDisplay(); 
+            } else {
+                 mainImageEl.src = "https://placehold.co/400x400/e5e7eb/374151?text=No+Images";
+            }
+            
+            // 4. Reset review form
+            document.getElementById('review-text').value = '';
+            document.querySelectorAll('#product-detail-modal input[name="rating"]').forEach(el => el.checked = false);
+            
+            // 5. Subscribe to product-specific reviews
+            document.getElementById('review-list').innerHTML = '<p class="text-gray-500 italic text-center py-4">Loading reviews...</p>';
+            if (isAuthReady) {
+                subscribeToProductReviews(currentProductId, renderReviews);
+            } else {
+                renderReviews([]); 
+            }
+
+            // 6. Show modal
+            document.getElementById('product-detail-modal').classList.remove('hidden');
+            document.getElementById('product-detail-modal').classList.add('flex');
+        }
+
+        function hideProductDetails() {
+            document.getElementById('product-detail-modal').classList.add('hidden');
+            document.getElementById('product-detail-modal').classList.remove('flex');
+            closeFullscreenCarousel(); 
+            currentProductId = null;
+            if (reviewSnapshotUnsubscribe) {
+                reviewSnapshotUnsubscribe();
+                reviewSnapshotUnsubscribe = null;
+            }
+        }
+
+
+        // --- Cart Logic ---
+
+        function addToCart(productId) {
+            const product = productMap[productId];
+            if (!product) return;
+
+            const newCart = { ...cart };
+            newCart[productId] = (newCart[productId] || 0) + 1;
+            
+            saveCartToFirestore(newCart);
+            showStatusModal("Item Added", `${product.name} added to cart.`);
+        }
+
+        function updateQuantity(productId, change) {
+            const newCart = { ...cart };
+            let currentQuantity = newCart[productId] || 0;
+            
+            currentQuantity += change;
+
+            if (currentQuantity <= 0) {
+                delete newCart[productId];
+            } else {
+                newCart[productId] = currentQuantity;
+            }
+            
+            saveCartToFirestore(newCart);
+        }
+        
+        async function checkout() {
+            if (Object.keys(cart).length === 0) {
+                showStatusModal("Cart Empty", "Your cart is empty. Please add some batteries first!");
+                return;
+            }
+            
+            await saveCartToFirestore({});
+
+            showStatusModal("Order Placed!", "Thank you for shopping at ScootVoltia! Your order has been successfully placed (simulation).");
+        }
+
+        // --- NEW: Filtering and Sorting Logic ---
+        
+        function applyFilterAndSort() {
+            currentFilter = document.getElementById('filter-category').value;
+            currentSort = document.getElementById('sort-by').value;
+            renderProducts();
+        }
+
+        function filterAndSortProducts() {
+            // 1. Filter
+            const filtered = products.filter(p => currentFilter === 'all' || p.category === currentFilter);
+
+            // 2. Sort
+            filtered.sort((a, b) => {
+                switch (currentSort) {
+                    case 'name-asc':
+                        return a.name.localeCompare(b.name);
+                    case 'price-asc':
+                        return a.price - b.price;
+                    case 'price-desc':
+                        return b.price - a.price;
+                    case 'rating-desc':
+                        // Get ratings, defaulting to 0 if none exist
+                        const ratingA = productRatingMap[a.id]?.average || 0;
+                        const ratingB = productRatingMap[b.id]?.average || 0;
+                        return ratingB - ratingA;
+                    default:
+                        return 0;
+                }
+            });
+
+            return filtered;
+        }
+
+        // --- Rendering Functions ---
+
+        function renderFilterOptions() {
+            const select = document.getElementById('filter-category');
+            select.innerHTML = '<option value="all">All Products</option>';
+            categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                select.appendChild(option);
+            });
+            // Ensure the select box reflects the current filter setting
+            select.value = currentFilter;
+        }
+
+
+        function renderProducts() {
+            const container = document.getElementById('product-list');
+            const sortedAndFilteredProducts = filterAndSortProducts();
+            
+            if (sortedAndFilteredProducts.length === 0) {
+                container.innerHTML = '<p class="text-xl text-center text-gray-500 col-span-full py-8">No batteries match your current filters.</p>';
+                return;
+            }
+
+            container.innerHTML = sortedAndFilteredProducts.map(product => {
+                const mainImage = product.images.length > 0 ? product.images[0] : `https://placehold.co/100x100/e5e7eb/374151?text=No+Image`;
+                const ratingInfo = productRatingMap[product.id] || { average: 0, count: 0 };
+                
+                const ratingHtml = ratingInfo.count > 0 ? 
+                    `<div class="flex items-center space-x-1">
+                        <span class="text-lg font-bold text-scootvoltia-yellow">${ratingInfo.average.toFixed(1)}</span>
+                        ${renderStars(ratingInfo.average, 'text-sm')}
+                        <span class="text-xs text-gray-500">(${ratingInfo.count})</span>
+                    </div>` :
+                    `<span class="text-xs text-gray-500 italic">No reviews yet</span>`;
+                
+                return `
+                    <div onclick="showProductDetails(${product.id})" class="bg-white rounded-xl shadow-lg p-5 flex flex-col hover:shadow-xl transition-shadow duration-300 border-t-4 border-scootvoltia-blue cursor-pointer transform hover:scale-[1.01]">
+                        <div class="flex items-center justify-center h-32 mb-4">
+                            <img src="${mainImage}" onerror="this.onerror=null; this.src='https://placehold.co/100x100/e5e7eb/374151?text=No+Image'" alt="${product.name}" class="w-28 h-28 object-contain">
+                        </div>
+                        
+                        <span class="text-sm font-medium text-gray-500 mb-1">${product.category}</span>
+                        <h4 class="text-xl font-bold mb-1 text-scootvoltia-blue">${product.name}</h4>
+
+                        <!-- Rating -->
+                        <div class="mb-3">
+                            ${ratingHtml}
+                        </div>
+                        
+                        <p class="text-gray-600 text-sm flex-grow mb-4 h-12 overflow-hidden">${product.description.substring(0, 80)}...</p>
+                        
+                        <div class="flex flex-col space-y-2 mt-auto">
+                            <div class="flex justify-between items-center">
+                                <span class="text-2xl font-extrabold brand-color">$${product.price.toFixed(2)}</span>
+                                <button onclick="event.stopPropagation(); addToCart(${product.id})" class="brand-bg text-white py-2 px-4 rounded-full font-semibold hover:bg-yellow-600 transition-colors shadow-md flex items-center">
+                                    Add to Cart
+                                </button>
+                            </div>
+                            <!-- New TTS Button -->
+                            <button id="tts-button-${product.id}" onclick="event.stopPropagation(); listenToDescription(${product.id})" class="text-scootvoltia-blue bg-blue-100 py-1.5 px-4 rounded-full text-sm font-semibold hover:bg-blue-200 transition-colors flex items-center justify-center">
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464l-4.243 4.243-1.414-1.414 4.243-4.243 1.414 1.414zm-1.414 1.414L8.464 15.536l-1.414-1.414 4.243-4.243 1.414 1.414zm-4.242 4.242l-1.414 1.414 4.242 4.242 1.414-1.414-4.242-4.242z"></path></svg>
+                                Listen to Description ✨
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderCart() {
+            const itemKeys = Object.keys(cart);
+            let total = 0;
+            
+            const cartContainers = [document.getElementById('cart-items'), document.getElementById('mobile-cart-items')];
+            const totalElements = [document.getElementById('cart-total'), document.getElementById('mobile-cart-total')];
+            const checkoutButtons = [document.getElementById('checkout-button'), document.getElementById('mobile-checkout-button')];
+            const cartCountElement = document.getElementById('cart-count');
+
+            cartCountElement.textContent = itemKeys.length;
+            
+            if (itemKeys.length === 0) {
+                const emptyMessage = '<p class="text-gray-500 text-center py-4">Your cart is empty.</p>';
+                cartContainers.forEach(container => container.innerHTML = emptyMessage);
+                checkoutButtons.forEach(btn => { btn.disabled = true; btn.textContent = 'Cart Empty'; });
+                totalElements.forEach(el => el.textContent = '$0.00');
+                return;
+            }
+            
+            let cartHtml = itemKeys.map(productId => {
+                const quantity = cart[productId];
+                const product = productMap[productId];
+                if (!product) return '';
+
+                const itemTotal = product.price * quantity;
+                total += itemTotal;
+
+                return `
+                    <div class="cart-item-card flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div class="flex-grow">
+                            <p class="font-semibold text-scootvoltia-blue">${product.name}</p>
+                            <p class="text-sm text-gray-500">
+                                $${product.price.toFixed(2)} x ${quantity} 
+                                <span class="font-bold ml-2 brand-color">$${itemTotal.toFixed(2)}</span>
+                            </p>
+                        </div>
+                        <div class="flex items-center space-x-1 ml-4">
+                            <button onclick="updateQuantity(${productId}, -1)" class="text-white bg-red-500 hover:bg-red-600 w-6 h-6 rounded-full flex items-center justify-center font-bold text-sm">-</button>
+                            <span class="w-6 text-center font-bold">${quantity}</span>
+                            <button onclick="updateQuantity(${productId}, 1)" class="text-white bg-green-500 hover:bg-green-600 w-6 h-6 rounded-full flex items-center justify-center font-bold text-sm">+</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            cartContainers.forEach(container => container.innerHTML = cartHtml);
+            totalElements.forEach(el => el.textContent = `$${total.toFixed(2)}`);
+            checkoutButtons.forEach(btn => { btn.disabled = false; btn.textContent = 'Proceed to Checkout'; });
+        }
+        
+        // --- UI Modal Functions ---
+
+        function showStatusModal(title, message) {
+            document.getElementById('status-title').textContent = title;
+            document.getElementById('status-message').textContent = message;
+            document.getElementById('status-modal').classList.remove('hidden');
+            document.getElementById('status-modal').classList.add('flex');
+        }
+
+        function hideStatusModal() {
+            document.getElementById('status-modal').classList.add('hidden');
+            document.getElementById('status-modal').classList.remove('flex');
+        }
+
+        function toggleCart() {
+            const modal = document.getElementById('mobile-cart-modal');
+            if (modal.classList.contains('hidden')) {
+                modal.classList.remove('hidden');
+            } else {
+                modal.classList.add('hidden');
+            }
+        }
+        
+        function showExpertModal() {
+            document.getElementById('expert-modal').classList.remove('hidden');
+            document.getElementById('expert-modal').classList.add('flex');
+        }
+
+        function hideExpertModal() {
+            document.getElementById('expert-modal').classList.add('hidden');
+            document.getElementById('expert-modal').classList.remove('flex');
+        }
+
+
+        // --- Main Execution ---
+        document.addEventListener('DOMContentLoaded', () => {
+            renderFilterOptions(); // Populate category options
+            renderProducts(); // Initial render
+            initializeFirebase();
+        });
+    </script>
+</body>
+</html>
