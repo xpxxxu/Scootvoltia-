@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScootVoltia E-commerce with Filtering & Ratings</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the brand feel */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f7f7;
+            color: #1f2937;
+        }
+        .header-bg {
+            background-color: #0b2241; /* Deep Navy Blue */
+        }
+        .brand-color {
+            color: #f59e0b; /* Amber/Electric Yellow */
+        }
+        .brand-bg {
+            background-color: #f59e0b;
+        }
+        .cart-item-card {
+            transition: all 0.3s ease;
+        }
+        .cart-item-card:hover {
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        /* Style for star rating input */
+        .rating input {
+            display: none;
+        }
+        .rating label {
+            float: right;
+            cursor: pointer;
+            color: #ccc;
+        }
+        .rating label:before {
+            content: '\2605'; /* Star symbol */
+            font-size: 2em;
+        }
+        .rating input:checked ~ label {
+            color: #f59e0b;
+        }
+        .rating label:hover,
+        .rating label:hover ~ label {
+            color: #ffc107;
+        }
+        /* Ensure the main image is clickable for full screen */
+        #detail-main-img-wrapper {
+            cursor: pointer;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    // Updated color names for the ScootVoltia brand
+                    colors: {
+                        'scootvoltia-blue': '#0b2241',
+                        'scootvoltia-yellow': '#f59e0b',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <!-- Header / Navigation Bar -->
+    <header class="header-bg shadow-lg sticky top-0 z-20">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+            <a href="#" class="text-3xl font-extrabold flex items-center">
+                <svg class="w-8 h-8 mr-2 brand-color" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-5-8a1 1 0 011-1h6a1 1 0 110 2H6a1 1 0 01-1-1z" clip-rule="evenodd"></path></svg>
+                <span class="text-white">Scoot</span><span class="brand-color">Voltia</span>
+            </a>
+            <div class="flex items-center space-x-4">
+                <!-- Expert Button -->
+                <button id="expert-button" onclick="showExpertModal()" class="bg-gray-700 text-white font-bold py-2 px-4 rounded-lg flex items-center hover:bg-gray-600 transition-colors">
+                    <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    Expert Advice ✨
+                </button>
+                <!-- Existing Cart Button (using scootvoltia colors) -->
+                <div class="relative">
+                    <button id="cart-button" onclick="toggleCart()" class="bg-scootvoltia-yellow text-scootvoltia-blue font-bold py-2 px-4 rounded-lg flex items-center hover:bg-yellow-400 transition-colors">
+                        <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                        Cart (<span id="cart-count">0</span>)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Layout -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 grid grid-cols-1 lg:grid-cols-4 gap-8">
+        
+        <!-- Product Catalog Section -->
+        <section class="lg:col-span-3">
+            <h2 class="text-4xl font-bold mb-6 text-scootvoltia-blue">Our Batteries</h2>
+
+            <!-- Filtering and Sorting Controls -->
+            <div class="flex flex-col sm:flex-row justify-between items-center bg-white p-4 rounded-xl shadow-md mb-6 space-y-3 sm:space-y-0">
+                <div class="flex items-center space-x-3 w-full sm:w-auto">
+                    <label for="filter-category" class="font-semibold text-gray-700 whitespace-nowrap">Filter by Category:</label>
+                    <select id="filter-category" onchange="applyFilterAndSort()" class="p-2 border border-gray-300 rounded-lg focus:ring-scootvoltia-yellow focus:border-scootvoltia-yellow w-full">
+                        <option value="all">All Products</option>
+                        <!-- Categories will be added here by JS -->
+                    </select>
+                </div>
+                <div class="flex items-center space-x-3 w-full sm:w-auto">
+                    <label for="sort-by" class="font-semibold text-gray-700 whitespace-nowrap">Sort By:</label>
+                    <select id="sort-by" onchange="applyFilterAndSort()" class="p-2 border border-gray-300 rounded-lg focus:ring-scootvoltia-yellow focus:border-scootvoltia-yellow w-full">
+                        <option value="name-asc">Name (A-Z)</option>
+                        <option value="price-asc">Price (Low to High)</option>
+                        <option value="price-desc">Price (High to Low)</option>
+                        <option value="rating-desc">Rating (High to Low)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Product Grid -->
+            <div id="product-list" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                <!-- Products will be rendered here by JavaScript -->
+            </div>
+        </section>
+
+        <!-- Shopping Cart (Sidebar) -->
+        <aside id="cart-sidebar" class="lg:col-span-1 bg-white p-6 rounded-xl shadow-2xl sticky top-20 h-fit hidden lg:block border-t-4 border-scootvoltia-yellow">
+            <h3 class="text-2xl font-bold mb-4 border-b pb-2 text-scootvoltia-blue">Your Cart</h3>
+            <div id="cart-items" class="space-y-4 mb-4 min-h-[50px]">
+                <!-- Cart items will be rendered here -->
+            </div>
+            <div id="cart-summary" class="border-t pt-4 space-y-2">
+                <div class="flex justify-between font-semibold text-lg">
+                    <span>Total:</span>
+                    <span id="cart-total" class="text-scootvoltia-yellow">$0.00</span>
+                </div>
+                <button id="checkout-button" onclick="checkout()" class="w-full brand-bg text-white font-bold py-3 rounded-lg shadow-md hover:bg-yellow-600 transition-colors disabled:opacity-50" disabled>
+                    Proceed to Checkout
+                </button>
+            </div>
+        </aside>
+
+    </main>
+    
+    <!-- Mobile Cart/Modal -->
+    <div id="mobile-cart-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 z-30 hidden lg:hidden transition-opacity duration-300">
+        <div class="bg-white absolute bottom-0 w-full rounded-t-2xl p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h3 class="text-2xl font-bold text-scootvoltia-blue">Your Cart</h3>
+                <button onclick="toggleCart()" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div id="mobile-cart-items" class="space-y-4 mb-4 max-h-80 overflow-y-auto">
+                <!-- Cart items will be rendered here -->
+            </div>
+            <div class="border-t pt-4 space-y-2">
+                <div class="flex justify-between font-semibold text-lg">
+                    <span>Total:</span>
+                    <span id="mobile-cart-total" class="text-scootvoltia-yellow">$0.00</span>
+                </div>
+                <button id="mobile-checkout-button" onclick="checkout()" class="w-full brand-bg text-white font-bold py-3 rounded-lg shadow-md hover:bg-yellow-600 transition-colors disabled:opacity-50" disabled>
+                    Proceed to Checkout
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Product Detail Modal (Standard View) -->
+    <div id="product-detail-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 z-40 hidden items-center justify-center transition-opacity duration-300 overflow-y-auto p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full my-8">
+            <div class="flex justify-between items-center p-6 border-b">
+                <h3 id="detail-name" class="text-3xl font-bold text-scootvoltia-blue">Product Name</h3>
+                <button onclick="hideProductDetails()" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Product Images (Carousel) -->
+                <div class="space-y-4">
+                    <!-- Added onclick to main image container to launch full screen -->
+                    <div id="detail-main-img-wrapper" onclick="openFullscreenCarousel()" class="relative w-full h-80 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
+                        <img id="detail-main-img" src="" alt="Main Product Image" class="w-full h-full object-contain transition-opacity duration-300">
+                        
+                        <!-- Previous Button -->
+                        <button onclick="event.stopPropagation(); prevImage()" class="absolute left-0 top-1/2 -translate-y-1/2 bg-black bg-opacity-30 hover:bg-opacity-50 text-white p-3 rounded-r-lg transition-all z-10">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                        </button>
+
+                        <!-- Next Button -->
+                        <button onclick="event.stopPropagation(); nextImage()" class="absolute right-0 top-1/2 -translate-y-1/2 bg-black bg-opacity-30 hover:bg-opacity-50 text-white p-3 rounded-l-lg transition-all z-10">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                        </button>
+                    </div>
+                    <div id="detail-image-gallery" class="flex space-x-2 overflow-x-auto pb-2 justify-center">
+                        <!-- Thumbnails will be rendered here -->
+                    </div>
+                </div>
+                <!-- Details and Action -->
+                <div class="space-y-4">
+                    <!-- Average Rating Display -->
+                    <div id="detail-average-rating" class="flex items-center space-x-2">
+                        <!-- Rating will be injected here -->
+                    </div>
+                    
+                    <p id="detail-description" class="text-gray-600 text-lg"></p>
+
+                    <!-- Listen to Description Button -->
+                    <button id="listen-description-button" onclick="listenToDescription()" class="flex items-center text-sm brand-bg text-white py-2 px-3 rounded-full hover:bg-yellow-600 transition-colors">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.121-7.072a8 8 0 010 11.314m-7.072-11.314a2 2 0 110 2.828 2 2 0 010-2.828zM15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        <span id="listen-description-text">Listen to Description (TTS)</span>
+                    </button>
+
+                    <div class="flex justify-between items-center border-t pt-4">
+                        <span id="detail-price" class="text-4xl font-extrabold brand-color">$0.00</span>
+                        <button id="detail-add-to-cart" onclick="" class="brand-bg text-white py-3 px-6 rounded-full font-semibold hover:bg-yellow-600 transition-colors shadow-md">
+                            Add to Cart
+                        </button>
+                    </div>
+                    <div class="text-sm font-medium text-gray-500">Category: <span id="detail-category" class="font-bold text-scootvoltia-blue"></span></div>
+                </div>
+            </div>
+            
+            <!-- Reviews Section -->
+            <div class="p-6 border-t mt-4">
+                <h4 class="text-2xl font-bold mb-4 text-scootvoltia-blue">Customer Reviews (<span id="review-count">0</span>)</h4>
+                
+                <!-- Review List -->
+                <div id="review-list" class="max-h-96 overflow-y-auto space-y-4 mb-6">
+                    <p class="text-gray-500 italic text-center py-4">Loading reviews...</p>
+                </div>
+
+                <!-- Add Review Form -->
+                <div class="border p-4 rounded-lg bg-gray-50">
+                    <h5 class="text-xl font-bold mb-3 text-scootvoltia-blue">Add Your Review</h5>
+                    <div class="flex items-center mb-3">
+                        <span class="mr-3 font-semibold text-gray-700">Your Rating:</span>
+                        <div class="rating flex flex-row-reverse">
+                            <input type="radio" id="star5" name="rating" value="5" /><label for="star5" title="5 stars"></label>
+                            <input type="radio" id="star4" name="rating" value="4" /><label for="star4" title="4 stars"></label>
+                            <input type="radio" id="star3" name="rating" value="3" /><label for="star3" title="3 stars"></label>
+                            <input type="radio" id="star2" name="rating" value="2" /><label for="star2" title="2 stars"></label>
+                            <input type="radio" id="star1" name="rating" value="1" /><label for="star1" title="1 star"></label>
+                        </div>
+                    </div>
+                    <textarea id="review-text" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-scootvoltia-yellow focus:border-scootvoltia-yellow resize-none" rows="3" placeholder="Share your experience with this battery..."></textarea>
+                    <button onclick="submitReview()" class="brand-bg text-white py-2 px-4 rounded-lg font-semibold hover:bg-yellow-600 transition-colors mt-3 w-full">
+                        Submit Review
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- FULL-SCREEN IMAGE VIEWER -->
+    <div id="fullscreen-image-viewer" class="fixed inset-0 bg-black bg-opacity-95 z-[60] hidden items-center justify-center transition-opacity duration-300">
+        
+        <!-- Close Button -->
+        <button onclick="closeFullscreenCarousel()" class="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors z-50">
+            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+        
+        <div class="relative w-full h-full flex items-center justify-center p-4">
+            
+            <!-- Image Counter -->
+            <div id="fs-counter" class="absolute top-4 left-4 text-white text-xl font-mono z-50 bg-black bg-opacity-50 px-3 py-1 rounded-full">
+                1 / 3
+            </div>
+
+            <!-- Main Full-Screen Image -->
+            <img id="fs-main-img" src="" alt="Full Screen Product Image" class="max-w-full max-h-full object-contain">
+            
+            <!-- Previous Button -->
+            <button onclick="prevImage(true)" class="absolute left-0 top-1/2 -translate-y-1/2 bg-transparent text-white p-5 hover:bg-black hover:bg-opacity-50 transition-all z-40">
+                <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+            </button>
+
+            <!-- Next Button -->
+            <button onclick="nextImage(true)" class="absolute right-0 top-1/2 -translate-y-1/2 bg-transparent text-white p-5 hover:bg-black hover:bg-opacity-50 transition-all z-40">
+                <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+            </button>
+        </div>
+    </div>
+    <!-- END FULL-SCREEN IMAGE VIEWER -->
+
+    <!-- Status Message Modal -->
+    <div id="status-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 z-50 hidden items-center justify-center">
+        <div class="bg-white p-6 rounded-lg shadow-2xl max-w-sm w-full text-center">
+            <h4 id="status-title" class="text-xl font-bold mb-2 text-scootvoltia-blue"></h4>
+            <p id="status-message" class="text-gray-600 mb-4"></p>
+            <button onclick="hideStatusModal()" class="brand-bg text-white py-2 px-4 rounded-lg hover:bg-yellow-600">Close</button>
+        </div>
+    </div>
+
+    <!-- Battery Expert Modal (LLM Feature) -->
+    <div id="expert-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 z-50 hidden items-center justify-center transition-opacity duration-300">
+        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-lg w-full">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h3 class="text-2xl font-bold text-scootvoltia-blue">Battery Expert Advisor ✨</h3>
+                <button onclick="hideExpertModal()" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <input type="text" id="expert-query" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-scootvoltia-yellow focus:border-scootvoltia-yellow" placeholder="e.g., What battery do I need for my electric scooter?">
+                <button id="expert-submit-button" onclick="getExpertAdvice()" class="w-full brand-bg text-white font-bold py-3 rounded-lg shadow-md hover:bg-yellow-600 transition-colors disabled:opacity-50">
+                    Get Advice!
+                </button>
+                <div id="expert-response" class="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 min-h-[100px] max-h-96 overflow-y-auto">
+                    <p class="text-gray-500 italic">Ask your question above to get real-time, grounded battery recommendations.</p>
+                </div>
+                <di
